@@ -1,0 +1,5 @@
+# 本地配置和日志不提交
+config.sh
+*.log
+snatch.out
+nohup.out
