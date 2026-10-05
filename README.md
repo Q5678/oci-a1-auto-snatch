@@ -18,8 +18,10 @@
 ```bash
 # 1. 复制配置模板并填写
 cp config.example.sh config.sh
-# 用编辑器打开 config.sh，填上你的 compartment OCID、可用性域、
-# 子网 OCID、镜像 OCID 等（里面有查询命令注释）
+# 用编辑器打开 config.sh，只需要填两项：
+#   COMPARTMENT_ID（区间 OCID，根区间可直接用 tenancy OCID）
+#   SUBNET_ID（子网 OCID）
+# 区域、可用性域、镜像 OCID 留空，脚本运行时会自动识别和查询。
 
 # 2. 加执行权限并运行
 chmod +x snatch.sh
