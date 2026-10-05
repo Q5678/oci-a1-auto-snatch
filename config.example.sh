@@ -6,25 +6,28 @@
 # ============================================================
 
 # ---- OCI 基础配置 ----
-COMPARTMENT_ID="ocid1.compartment.oc1..xxxx"   # 你的 compartment OCID
+# 只需要填 COMPARTMENT_ID 和 SUBNET_ID，
+# 区域、可用性域、镜像 OCID 留空，脚本运行时会自动查询。
+COMPARTMENT_ID="ocid1.compartment.oc1..xxxx"   # 你的 compartment OCID（根区间可直接用 tenancy OCID）
 
-# 可用性域列表（脚本按顺序轮询），用完整名称。
-# 查询命令：oci iam availability-domain list --compartment-id <tenancy OCID>
-AVAILABILITY_DOMAINS=(
-  "ap-singapore-1-AD-1"
-  "ap-singapore-1-AD-2"
-)
+# 区域：留空则从下面的子网 OCID 自动识别
+REGION=""
+
+# 可用性域：留空则脚本自动查询该区域的全部可用性域并轮询
+# 如需手动指定，取消下面注释并填写：
+# AVAILABILITY_DOMAINS=(
+#   "ap-singapore-2-AD-1"
+# )
+AVAILABILITY_DOMAINS=()
 
 SHAPE="VM.Standard.A1.Flex"                   # 机型
 OCPUS=4                                       # OCPU 数（免费额度最多 4）
 MEMORY_GBS=24                                 # 内存 GB（免费额度最多 24）
 
 SUBNET_ID="ocid1.subnet.oc1..xxxx"             # 子网 OCID
-IMAGE_ID="ocid1.image.oc1..xxxx"               # 系统镜像 OCID
-# 查询 ARM 镜像：
-# oci compute image list --compartment-id <compartment OCID> \
-#   --operating-system "Canonical Ubuntu" --shape VM.Standard.A1.Flex \
-#   --sort-by TIMECREATED --sort-order DESC --query 'data[0].id'
+
+# 系统镜像：留空则脚本自动使用最新的 Canonical Ubuntu ARM 镜像
+IMAGE_ID=""
 
 SSH_KEY_FILE="$HOME/.ssh/id_rsa.pub"          # SSH 公钥（没有就 ssh-keygen 生成一个）
 DISPLAY_NAME="a1-auto"                        # 实例显示名称
