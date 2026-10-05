@@ -7,7 +7,8 @@
 #
 # 使用方法：
 #   1. 安装并配置 OCI CLI: oci setup config
-#   2. cp config.example.sh config.sh，并填好里面的配置
+#   2. cp config.example.sh config.sh，只填 COMPARTMENT_ID 和 SUBNET_ID；
+#      区域、可用性域、镜像 OCID 留空，脚本会自动查询
 #   3. chmod +x snatch.sh && ./snatch.sh
 #   4. 挂后台: nohup ./snatch.sh > snatch.out 2>&1 &
 # ============================================================
@@ -27,19 +28,57 @@ fi
 source "$CONFIG"
 
 # ---- 校验必填配置 ----
-for var in COMPARTMENT_ID SHAPE SUBNET_ID IMAGE_ID SSH_KEY_FILE; do
+for var in COMPARTMENT_ID SHAPE SUBNET_ID SSH_KEY_FILE; do
   if [[ -z "${!var:-}" ]]; then
     echo "错误: config.sh 中 $var 未填写"
     exit 1
   fi
 done
-if [[ ${#AVAILABILITY_DOMAINS[@]} -eq 0 ]]; then
-  echo "错误: config.sh 中 AVAILABILITY_DOMAINS 为空，至少填一个可用性域"
-  exit 1
-fi
 if [[ ! -f "$SSH_KEY_FILE" ]]; then
   echo "错误: SSH 公钥文件不存在: $SSH_KEY_FILE"
+  echo "  没有密钥对的话，运行 ssh-keygen -t rsa -b 4096 一路回车生成"
   exit 1
+fi
+
+# ---- 自动识别区域（优先用 config.sh 里填的，否则从子网 OCID 解析）----
+if [[ -z "${REGION:-}" ]]; then
+  REGION="$(echo "$SUBNET_ID" | cut -d. -f4)"
+  if [[ -z "$REGION" || "$REGION" == "$SUBNET_ID" ]]; then
+    echo "错误: 无法从 SUBNET_ID 解析区域，请在 config.sh 中填写 REGION"
+    exit 1
+  fi
+fi
+
+# ---- 自动查询可用性域（config.sh 里留空时）----
+if [[ -z "${AVAILABILITY_DOMAINS[*]:-}" ]]; then
+  echo "正在查询 $REGION 的可用性域..."
+  AD_NAMES="$(oci iam availability-domain list \
+    --compartment-id "$COMPARTMENT_ID" --region "$REGION" 2>/dev/null \
+    | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)"
+  AVAILABILITY_DOMAINS=()
+  while IFS= read -r ad_name; do
+    [[ -n "$ad_name" ]] && AVAILABILITY_DOMAINS+=("$ad_name")
+  done <<< "$AD_NAMES"
+  if [[ ${#AVAILABILITY_DOMAINS[@]} -eq 0 ]]; then
+    echo "错误: 查询可用性域失败，请检查 OCI CLI 配置（oci setup config）"
+    exit 1
+  fi
+fi
+
+# ---- 自动查询最新 Ubuntu ARM 镜像（config.sh 里留空时）----
+if [[ -z "${IMAGE_ID:-}" ]]; then
+  echo "正在查询最新的 Canonical Ubuntu ARM 镜像..."
+  IMAGE_ID="$(oci compute image list \
+    --compartment-id "$COMPARTMENT_ID" \
+    --operating-system "Canonical Ubuntu" \
+    --shape "VM.Standard.A1.Flex" \
+    --sort-by TIMECREATED --sort-order DESC \
+    --region "$REGION" 2>/dev/null \
+    | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)"
+  if [[ -z "$IMAGE_ID" ]]; then
+    echo "错误: 查询镜像失败，请检查 OCI CLI 配置（oci setup config）"
+    exit 1
+  fi
 fi
 
 ROUND_INTERVAL="${ROUND_INTERVAL:-120}"
@@ -58,7 +97,7 @@ log() {
 trap 'log "收到中断信号，退出。"; exit 130' INT TERM
 
 log "==================================================="
-log "开始抢机：shape=$SHAPE, ocpus=$OCPUS, memory=${MEMORY_GBS}GB"
+log "开始抢机：region=$REGION, shape=$SHAPE, ocpus=$OCPUS, memory=${MEMORY_GBS}GB"
 log "可用性域：${AVAILABILITY_DOMAINS[*]}"
 log "==================================================="
 
@@ -78,6 +117,7 @@ while true; do
       --image-id "$IMAGE_ID" \
       --ssh-authorized-keys-file "$SSH_KEY_FILE" \
       --display-name "$DISPLAY_NAME" \
+      --region "$REGION" \
       --shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEMORY_GBS}" \
       --wait-for-state RUNNING \
       --wait-interval-seconds 10 \
